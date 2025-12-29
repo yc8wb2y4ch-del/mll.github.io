@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>寓言游戏：小马过河</title>
+    <link href="https://fonts.googleapis.com/css2?family=ZCOOL+XiaoWei&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #1a1a1a;
+            --ui-bg: #3c2f2f;
+            --ui-border: #a1887f;
+            --text-color: #ffffff;
+            --highlight: #ffd54f;
+        }
+
+        body {
+            margin: 0;
+            background-color: var(--bg-dark);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: 'ZCOOL+XiaoWei', sans-serif;
+            overflow: hidden;
+            color: white;
+            user-select: none;
+        }
+
+        #game-container {
+            width: 960px;
+            height: 540px;
+            background-color: #000;
+            position: relative;
+            box-shadow: 0 0 60px rgba(0,0,0,0.8);
+            border: 4px solid var(--ui-border);
+            display: flex;
+            flex-direction: column;
+            image-rendering: pixelated; 
+            image-rendering: crisp-edges;
+        }
+
+        /* --- 场景层 --- */
+        #scene-layer {
+            flex: 1; 
+            height: 75%;
+            position: relative;
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            overflow: hidden;
+            border-bottom: 4px solid var(--ui-border);
+            background-color: #333;
+            /* [优化] 添加背景过渡效果，实现场景平滑切换 */
+            transition: background-image 0.5s ease-in-out;
+        }
+
+        /* --- 角色精灵 --- */
+        .character {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            height: 50%;
+            width: auto;
+            z-index: 10;
+            filter: drop-shadow(4px 4px 0px rgba(0,0,0,0.3));
+            transition: all 0.3s ease-in-out;
+            display: none; /* Default hidden */
+        }
+        
+        #horse-sprite { height: 60%; bottom: 30px; }
+        #cow-sprite { height: 80%; bottom: 10px; left: 65%; }
+        #squirrel-sprite { height: 25%; bottom: 180px; left: 70%; transform: translateX(-50%) rotate(5deg); }
+        #mom-sprite { height: 70%; bottom: 20px; left: 35%;}
+        #teacher-sprite { height: 90%; bottom: -10px; }
+        #mill-sprite { position: absolute; bottom: 50px; right: 50px; height: 50%; display:none; z-index: 5;}
+
+
+        /* 动画效果 */
+        .anim-idle {
+            animation: breathe 3s infinite ease-in-out;
+        }
+        @keyframes breathe { 
+            0%, 100% { transform: translateX(-50%) scaleY(1); } 
+            50% { transform: translateX(-50%) scaleY(1.02); } 
+        }
+        #squirrel-sprite.anim-idle {
+             animation: squirrel-panic 0.5s infinite alternate;
+        }
+        @keyframes squirrel-panic {
+            0% { transform: translateX(-50%) rotate(3deg) translateY(0); }
+            100% { transform: translateX(-50%) rotate(-3deg) translateY(-5px); }
+        }
+
+        .anim-walk-to-river {
+            animation: walk-to-river 3s linear forwards, horse-walk 0.5s infinite steps(2);
+        }
+        @keyframes walk-to-river {
+            from { left: 10%; opacity: 0; }
+            to { left: 40%; opacity: 1; }
+        }
+        @keyframes horse-walk {
+            0% { transform: translateX(-50%) translateY(0); }
+            50% { transform: translateX(-50%) translateY(-8px); }
+            100% { transform: translateX(-50%) translateY(0); }
+        }
+        
+        .anim-cross-river-bad {
+             animation: cross-river-bad 6s linear forwards;
+        }
+        @keyframes cross-river-bad {
+            0% { left: 40%; bottom: 30px;}
+            30% { left: 55%; bottom: -40px; } /* 掉进水里 */
+            70% { left: 70%; bottom: -30px; } /* 挣扎 */
+            100% { left: 85%; bottom: 30px; }
+        }
+        
+        .anim-cross-river-good {
+            animation: cross-river-good 5s linear forwards;
+        }
+        @keyframes cross-river-good {
+            from { left: 40%; }
+            to { left: 85%; }
+        }
+        
+        .anim-go-home {
+            animation: go-home 2s linear forwards;
+        }
+        @keyframes go-home {
+            from { left: 40%; transform: translateX(-50%) scaleX(-1); }
+            to { left: -10%; transform: translateX(-50%) scaleX(-1); }
+        }
+
+        .icon {
+            position: absolute;
+            left: 50%;
+            top: 20%;
+            font-size: 48px;
+            text-shadow: 2px 2px 0 #000;
+            opacity: 0;
+            animation: pop-icon 1.5s ease-out forwards;
+        }
+        @keyframes pop-icon {
+            0% { transform: scale(0.5); opacity: 0; }
+            50% { transform: scale(1.2); opacity: 1; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .icon-hidden { display: none; }
+
+
+        /* --- UI层 --- */
+        #ui-layer { 
+            height: 140px; 
+            background-color: var(--ui-bg); 
+            display: flex; 
+            padding: 10px 15px; 
+            box-sizing: border-box; 
+            gap: 15px; 
+            position: relative; 
+            flex-shrink: 0; 
+            z-index: 30; 
+        }
+        #portrait-frame { 
+            height: 100%; 
+            aspect-ratio: 1 / 1; 
+            background: #261f1f; 
+            border: 3px solid var(--ui-border); 
+            flex-shrink: 0; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.6); 
+            border-radius: 4px; 
+        }
+        #portrait-img { 
+            width: 85%; 
+            height: 85%; 
+            object-fit: contain; 
+        }
+        #dialogue-area { 
+            flex-grow: 1; 
+            display: flex; 
+            flex-direction: column; 
+            position: relative; 
+            padding-right: 40px; 
+        }
+        #name-tag { 
+            background-color: var(--highlight); 
+            color: #3e2723; 
+            padding: 4px 10px; 
+            border-radius: 2px; 
+            font-size: 20px; 
+            font-weight: bold; 
+            width: fit-content; 
+            margin-bottom: 5px; 
+            border: 1px solid #fff; 
+            letter-spacing: 1px; 
+        }
+        #text-content { 
+            font-size: 22px; 
+            line-height: 1.6; 
+            color: #f0f0f0; 
+            text-shadow: 2px 2px 0 #000; 
+            margin-right: 200px;
+        }
+        .squirrel-text {
+            font-size: 19px !important;
+            animation: text-shake 0.3s infinite;
+        }
+        @keyframes text-shake {
+            0% { transform: translateX(0); }
+            25% { transform: translateX(-1px); }
+            75% { transform: translateX(1px); }
+            100% { transform: translateX(0); }
+        }
+        
+        #choices-box { 
+            position: absolute; 
+            bottom: 0; 
+            right: 0; 
+            display: flex; 
+            flex-direction: column; 
+            gap: 8px; 
+            align-items: flex-end; 
+            z-index: 20; 
+        }
+        .pixel-btn { 
+            background: #f5f5f5; 
+            color: #333; 
+            border: 3px solid #5d4035; 
+            padding: 8px 16px; 
+            font-family: inherit; 
+            font-size: 18px; 
+            cursor: pointer; 
+            box-shadow: 0 4px 0 #3e2723; 
+            text-align: right; 
+            border-radius: 2px; 
+            transition: all 0.1s; 
+            min-width: 200px;
+        }
+        .pixel-btn:hover { 
+            background: #fffbe3; 
+            transform: translateY(-2px); 
+            box-shadow: 0 6px 0 #3e2723;
+            border-color: #795548; 
+            color: #000; 
+        }
+        .pixel-btn:active {
+            transform: translateY(2px);
+            box-shadow: 0 2px 0 #3e2723;
+        }
+
+        #restart-btn-container { 
+            position: absolute; 
+            top: 0; 
+            right: 0; 
+        }
+        #restart-btn { 
+            background: transparent; 
+            border: none; 
+            color: #aaa; 
+            font-size: 24px; 
+            cursor: pointer; 
+            padding: 0; 
+            width: 30px; 
+            height: 30px; 
+            transition: all 0.2s; 
+            line-height: 1; 
+            font-family: sans-serif; 
+        }
+        #restart-btn:hover { 
+            color: #ff8a65; 
+            transform: rotate(90deg); 
+        }
+        .next-indicator { 
+            position: absolute; 
+            bottom: 5px; 
+            right: 5px; 
+            width: 12px; 
+            height: 12px; 
+            background: #fff; 
+            clip-path: polygon(0 0, 0% 100%, 100% 50%); 
+            animation: blink 1s infinite; 
+            cursor: pointer; 
+        }
+        @keyframes blink { 0%,100% {opacity:1} 50% {opacity:0.3} }
+
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <div id="scene-layer">
+        <!-- Pixel art characters will be injected here by JS -->
+        <img id="teacher-sprite" class="character">
+        <img id="horse-sprite" class="character">
+        <img id="mom-sprite" class="character">
+        <img id="cow-sprite" class="character">
+        <img id="squirrel-sprite" class="character">
+        <img id="mill-sprite">
+        <div id="icon-container"></div>
+    </div>
+
+    <div id="ui-layer">
+        <div id="portrait-frame" style="visibility: hidden;">
+            <img id="portrait-img" src="">
+        </div>
+
+        <div id="dialogue-area">
+            <div id="restart-btn-container">
+                <button id="restart-btn" onclick="restartGame()">↻</button>
+            </div>
+
+            <div id="name-tag">系统</div>
+            <div id="text-content">正在加载像素世界...</div>
+            <div id="choices-box"></div>
+            <div id="next-btn" class="next-indicator" style="display:none;"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function svgToUrl(svgStr) { return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgStr); }
+
+    /* --- 1. 背景资源 --- */
+    const svgBgClassroom = `<svg width="960" height="540" viewBox="0 0 960 540" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges"><rect width="960" height="540" fill="#f0e4d7"/><rect y="400" width="960" height="140" fill="#c7b299"/><rect x="230" y="60" width="500" height="280" fill="#5D4037"/><rect x="250" y="80" width="460" height="240" fill="#2E4D35"/><rect x="250" y="320" width="460" height="15" fill="#8D6E63"/><text x="480" y="200" font-family="monospace" font-weight="bold" font-size="60" fill="#FFFFFF" text-anchor="middle">小马过河</text><text x="680" y="270" font-family="monospace" font-weight="bold" font-size="20" fill="#CCCCCC" text-anchor="end">寓言新编</text></svg>`;
+    const svgBgFarm = `<svg width="960" height="540" viewBox="0 0 960 540" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges"><rect width="960" height="540" fill="#81D4FA"/><rect y="360" width="960" height="180" fill="#AED581"/><rect x="60" y="260" width="180" height="120" fill="#A1887F"/><rect x="50" y="250" width="200" height="20" fill="#795548"/><rect x="130" y="290" width="40" height="70" fill="#6D4C41"/><rect x="80" y="310" width="30" height="30" fill="#FFF59D"/><path d="M0 360 H280 V370 H0 Z M320 360 H960 V370 H320 Z" fill="#8D6E63"/><path d="M0 370 L280 370 L280 375 L0 375Z" fill="#C5E1A5"/></svg>`;
+    const svgBgRiver = `<svg width="960" height="540" viewBox="0 0 960 540" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges"><rect width="960" height="540" fill="#81D4FA"/><rect y="360" width="960" height="180" fill="#AED581"/><rect x="0" y="400" width="380" height="140" fill="#FFE0B2"/><rect x="620" y="400" width="340" height="140" fill="#FFE0B2"/><rect x="380" y="400" width="240" height="140" fill="#4FC3F7"/><g opacity="0.6"><path d="M380 420 H 620" stroke="#FFF" stroke-width="4"/><path d="M390 440 H 610" stroke="#FFF" stroke-width="3"/><path d="M400 460 H 600" stroke="#FFF" stroke-width="4"/></g><rect x="680" y="300" width="20" height="100" fill="#6D4C41"/><path d="M640 300 L690 200 L740 300 Z" fill="#4CAF50"/></svg>`;
+    const svgBgEndingA = `<svg width="960" height="540" viewBox="0 0 960 540" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges"><rect width="960" height="540" fill="#42a5f5"/><rect y="360" width="960" height="180" fill="#c5e1a5"/><rect x="620" y="400" width="340" height="140" fill="#ffe0b2"/><rect x="700" y="300" width="160" height="100" fill="#a1887f"/><text x="480" y="200" font-family="monospace" font-size="40" fill="#FFF" text-anchor="middle">结局 A: 鲁莽的尝试</text></svg>`;
+    const svgBgEndingB = `<svg width="960" height="540" viewBox="0 0 960 540" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges"><rect width="960" height="540" fill="#aed581"/><rect x="60" y="260" width="180" height="120" fill="#A1887F"/><rect x="380" y="400" width="240" height="140" fill="#4FC3F7" opacity="0.5"/><text x="480" y="200" font-family="monospace" font-size="40" fill="#3e2723" text-anchor="middle">结局 B: 胆怯的退缩</text></svg>`;
+    const svgBgEndingC = `<svg width="960" height="540" viewBox="0 0 960 540" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges"><rect width="960" height="540" fill="#ffca28"/><rect y="360" width="960" height="180" fill="#c5e1a5"/><rect x="620" y="400" width="340" height="140" fill="#ffe0b2"/><rect x="700" y="300" width="160" height="100" fill="#a1887f"/><rect x="710" y="290" width="140" height="20" fill="#8d6e63"/><text x="480" y="200" font-family="monospace" font-size="40" fill="#FFF" text-anchor="middle">结局 C: 智慧的实践</text></svg>`;
+
+    /* --- 2. 角色资源 (形象已更新) --- */
+    // 霓老师
+    const svgTeacher = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges"><path d="M24 4 H40 V16 H24 Z" fill="#2D1B17"/><path d="M12 20 H52 V46 H48 V48 H16 V46 H12 Z" fill="#3E2723"/><path d="M22 36 H42 V48 H22 Z" fill="#FFECB3"/><path d="M12 20 H52 V32 H14 V22 H12 Z" fill="#F8BBD0" opacity="0.6"/><path d="M12 20 H52 V22 H12 Z" fill="#F8BBD0"/><rect x="16" y="32" width="12" height="10" fill="#263238"/><rect x="17" y="33" width="10" height="8" fill="#4DD0E1"/><rect x="19" y="34" width="6" height="6" fill="#0097A7"/><rect x="17" y="33" width="3" height="3" fill="#FFF"/><rect x="36" y="32" width="12" height="10" fill="#263238"/><rect x="37" y="33" width="10" height="8" fill="#4DD0E1"/><rect x="39" y="34" width="6" height="6" fill="#0097A7"/><rect x="37" y="33" width="3" height="3" fill="#FFF"/><rect x="31" y="44" width="2" height="2" fill="#F06292"/><path d="M20 48 H44 V64 H20 Z" fill="#F48FB1"/></svg>`;
+    const svgTeacherHead = `<svg width="100" height="100" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges"><path d="M24 4 H40 V16 H24 Z" fill="#2D1B17"/> <path d="M32 2 H36 V14 H34 V16 H32 Z" fill="#AA00FF"/><path d="M8 6 H22 V20 H8 Z" fill="#3E2723"/> <path d="M11 9 H19 V17 H11 Z" fill="#CE93D8"/><path d="M42 6 H56 V20 H42 Z" fill="#3E2723"/> <path d="M45 9 H53 V17 H45 Z" fill="#CE93D8"/><path d="M12 20 H52 V46 H48 V48 H16 V46 H12 Z" fill="#3E2723"/> <path d="M22 36 H42 V48 H22 Z" fill="#FFECB3"/><path d="M12 20 H52 V32 H14 V22 H12 Z" fill="#F8BBD0" opacity="0.6"/> <path d="M12 20 H52 V22 H12 Z" fill="#F8BBD0"/><rect x="16" y="32" width="12" height="10" fill="#263238"/> <rect x="17" y="33" width="10" height="8" fill="#00BCD4"/> <rect x="19" y="34" width="6" height="6" fill="#006064"/> <rect x="17" y="33" width="4" height="4" fill="#FFF"/><rect x="36" y="32" width="12" height="10" fill="#263238"/> <rect x="37" y="33" width="10" height="8" fill="#00BCD4"/> <rect x="39" y="34" width="6" height="6" fill="#006064"/> <rect x="37" y="33" width="4" height="4" fill="#FFF"/><rect x="31" y="44" width="2" height="2" fill="#F06292"/></svg>`;
+    
+    // 小马
+    const ponySvg = (express = 'normal') => {
+        let eye = `<rect x="50" y="25" width="4" height="4" fill="#000"/>`;
+        let mouth = `<rect x="55" y="35" width="4" height="2" fill="#000"/>`;
+        let wheat = `<rect x="25" y="20" width="20" height="15" fill="#f1c40f"/><path d="M25 20 L20 15 M30 20 L30 15 M40 20 L45 15" stroke="#f1c40f" stroke-width="2"/>`;
+        
+        if(express === 'sad' || express === 'scared') { // 'sad' is now mapped to scared expression
+            eye = `<rect x="50" y="24" width="6" height="6" fill="#000"/><rect x="51" y="25" width="2" height="2" fill="#fff"/>`;
+            mouth = `<rect x="55" y="35" width="6" height="4" fill="#000"/>`;
+            wheat = `<rect x="25" y="20" width="20" height="15" fill="#f1c40f"/>`; // 麦子还在
+        } else if (express === 'wet') {
+             wheat = ''; // 麦子可能掉了或者湿了
+             eye = `<rect x="50" y="25" width="4" height="4" fill="#000"/><path d="M30 40 L30 50 M40 45 L40 55" stroke="#3498db" stroke-width="2"/>`;
+        } else if (express === 'noWheat' || express === 'happy') { // happy is just normal without wheat
+            wheat = '';
+        }
+
+        return `<svg width="100" height="100" viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+            <rect x="20" y="30" width="40" height="20" fill="#d35400"/> <!-- Body -->
+            <rect x="20" y="50" width="6" height="20" fill="#d35400"/> <!-- Leg FL -->
+            <rect x="50" y="50" width="6" height="20" fill="#d35400"/> <!-- Leg FR -->
+            <rect x="45" y="15" width="15" height="20" fill="#d35400"/> <!-- Neck -->
+            <rect x="45" y="15" width="20" height="15" fill="#d35400"/> <!-- Head -->
+            <rect x="42" y="15" width="4" height="15" fill="#2c3e50"/> <!-- Mane -->
+            <rect x="15" y="35" width="5" height="15" fill="#2c3e50"/> <!-- Tail -->
+            ${wheat}
+            ${eye}
+            ${mouth}
+        </svg>`;
+    };
+    const svgHorseHead = ponySvg('normal'); // Use the function for head too
+
+    // 马妈妈
+    const svgMom = `<svg width="120" height="120" viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges"> <rect x="15" y="25" width="50" height="25" fill="#ecf0f1"/> <!-- Body White --> <rect x="15" y="50" width="8" height="25" fill="#ecf0f1"/> <rect x="55" y="50" width="8" height="25" fill="#ecf0f1"/> <rect x="50" y="10" width="20" height="25" fill="#ecf0f1"/> <rect x="50" y="10" width="25" height="18" fill="#ecf0f1"/> <rect x="48" y="10" width="4" height="20" fill="#95a5a6"/> <!-- Mane --> <rect x="65" y="15" width="4" height="4" fill="#000"/> <rect x="10" y="30" width="5" height="20" fill="#95a5a6"/> </svg>`;
+    const svgMomHead = svgMom; // Use the same SVG for the head portrait
+
+    // 老牛
+    const svgCow = `<svg width="150" height="150" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges"> <rect x="20" y="40" width="60" height="30" fill="#7f8c8d"/> <rect x="20" y="70" width="10" height="20" fill="#7f8c8d"/> <rect x="70" y="70" width="10" height="20" fill="#7f8c8d"/> <rect x="60" y="20" width="30" height="30" fill="#7f8c8d"/> <path d="M60 25 L50 15 M90 25 L100 15" stroke="#ecf0f1" stroke-width="4"/> <!-- Horns --> <rect x="80" y="30" width="4" height="4" fill="#000"/> </svg>`;
+    const svgCowHead = svgCow; // Use the same SVG for the head portrait
+    
+    // 松鼠
+    const svgSquirrel = `<svg width="80" height="80" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges"> <!-- 尾巴: 巨大的S型蓬松大尾巴 --> <path d="M40 50 H52 V46 H56 V30 H52 V22 H44 V18 H36 V22 H40 V26 H44 V30 H48 V42 H40 Z" fill="#D84315"/> <!-- 身体 --> <rect x="24" y="34" width="16" height="20" fill="#E65100"/> <!-- 肚皮 --> <rect x="24" y="38" width="8" height="16" fill="#FFB74D"/> <!-- 头部: 小脑袋 --> <rect x="20" y="22" width="14" height="12" fill="#E65100"/> <!-- 吻部 --> <rect x="16" y="28" width="4" height="4" fill="#FFB74D"/> <rect x="16" y="28" width="2" height="2" fill="#000"/> <!-- 鼻尖 --> <!-- 耳朵 --> <rect x="22" y="16" width="4" height="6" fill="#E65100"/> <rect x="30" y="18" width="4" height="4" fill="#E65100"/> <!-- 眼睛 --> <rect x="26" y="24" width="2" height="4" fill="#000"/> <!-- 手脚 --> <rect x="24" y="54" width="12" height="4" fill="#E65100"/> <rect x="20" y="40" width="6" height="4" fill="#E65100"/> </svg>`;
+    const svgSquirrelHead = svgSquirrel; // Use the same SVG for the head portrait
+    
+    // 磨坊
+    const svgMill = `<svg viewBox="0 0 160 100" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges"><path d="M0 0 H160 V100 H0Z" fill="#a1887f"/><rect x="10" y="10" width="140" height="90" fill="#8d6e63"/><rect x="60" y="50" width="40" height="50" fill="#5d4037"/><rect x="30" y="30" width="30" height="30" fill="#efebe9"/><rect x="100" y="30" width="30" height="30" fill="#efebe9"/></svg>`;
+
+    const assets = {
+        bg: { 
+            class: svgToUrl(svgBgClassroom), 
+            farm: svgToUrl(svgBgFarm),
+            river: svgToUrl(svgBgRiver),
+            endA: svgToUrl(svgBgEndingA),
+            endB: svgToUrl(svgBgEndingB),
+            endC: svgToUrl(svgBgEndingC),
+        },
+        sprite: { 
+            teacher: svgToUrl(svgTeacher), 
+            horse: svgToUrl(ponySvg('normal')),
+            horseWet: svgToUrl(ponySvg('wet')),
+            horseSad: svgToUrl(ponySvg('scared')), // Map 'sad' to the new 'scared' expression
+            horseHappy: svgToUrl(ponySvg('happy')),
+            mom: svgToUrl(svgMom),
+            cow: svgToUrl(svgCow),
+            squirrel: svgToUrl(svgSquirrel),
+            mill: svgToUrl(svgMill),
+        },
+        head: { 
+            teacher: svgToUrl(svgTeacherHead), 
+            horse: svgToUrl(svgHorseHead),
+            mom: svgToUrl(svgMomHead),
+            cow: svgToUrl(svgCowHead),
+            squirrel: svgToUrl(svgSquirrelHead),
+        }
+    };
+
+    // [优化] 剧情脚本与对白润色
+    const script = [
+        {
+            id: 1, // 1. 课程引入
+            bg: assets.bg.class,
+            char: { teacher: "anim-idle" },
+            head: assets.head.teacher,
+            name: "霓老师",
+            text: "同学们好！今天我们来体验一个经典寓言。你将化身为主角小马，用你的选择书写结局。准备好了吗？",
+            choices: [ { txt: "准备好了！出发！", to: 2 } ]
+        },
+        {
+            id: 2, // 2. 接受任务
+            bg: assets.bg.farm,
+            char: { horse: "anim-idle", mom: "anim-idle" },
+            head: assets.head.mom,
+            name: "马妈妈",
+            text: "孩子，你已经长大了，能帮妈妈把这袋麦子送到河对岸的磨坊去吗？",
+            icon: "🌾",
+            next: 3
+        },
+        {
+            id: 3,
+            bg: assets.bg.farm,
+            char: { horse: "anim-idle", mom: "anim-idle" },
+            head: assets.head.horse,
+            name: "小马",
+            text: "好的妈妈，我保证完成任务！",
+            next: 4
+        },
+        {
+            id: 4, // 3. 河边初遇
+            bg: assets.bg.river,
+            char: { horse: "anim-walk-to-river", cow: "anim-idle" },
+            head: assets.head.horse,
+            name: "小马",
+            text: "（来到河边）呀，一条河拦住了去路。这可怎么办呢？",
+            wait: 3000,
+            next: 5
+        },
+        {
+            id: 5,
+            bg: assets.bg.river,
+            char: { horse: "anim-idle", cow: "anim-idle" },
+            head: assets.head.horse,
+            name: "小马",
+            icon: "❓",
+            text: "牛伯伯您好！请问这条河的水深吗？我能过去吗？",
+            next: 6
+        },
+        {
+            id: 6,
+            bg: assets.bg.river,
+            char: { horse: "anim-idle", cow: "anim-idle" },
+            head: assets.head.cow,
+            name: "老牛伯伯",
+            text: "哈哈，水很浅，刚没过我的小腿。你放心过去吧！",
+            choices: [
+                { txt: "相信牛伯伯，直接过河", to: 7 },
+                { txt: "看起来有点深，再问问别人", to: 8 }
+            ]
+        },
+        { // 4A. 选择直接过河
+            id: 7, 
+            bg: assets.bg.river,
+            char: { horse: "anim-cross-river-bad" },
+            head: assets.head.horse,
+            name: "小马",
+            text: "（扑通！）哎呀！水好深！我的麦子……还好我游泳技术不错！",
+            icon: "！",
+            wait: 6000,
+            next: 100 // End A
+        },
+        { // 4B. 选择再问问
+            id: 8,
+            bg: assets.bg.river,
+            char: { horse: "anim-idle", squirrel: "anim-idle" },
+            head: assets.head.horse,
+            name: "小马",
+            text: "还是小心一点好。小松鼠，你好！你知道这条河深不深吗？",
+            next: 9
+        },
+        {
+            id: 9,
+            bg: assets.bg.river,
+            char: { horse: "anim-idle", squirrel: "anim-idle" },
+            head: assets.head.squirrel,
+            name: "小松鼠",
+            text: "深！太深了！千万别过去！我的伙伴昨天就不小心被水冲走了！",
+            isSquirrel: true,
+            choices: [
+                { txt: "听小松鼠的，赶紧回家", to: 10 },
+                { txt: "回去问问妈妈的意见", to: 11 },
+                { txt: "自己小心地试试深浅", to: 13 }
+            ]
+        },
+        { // 5B1. 选择回家
+            id: 10,
+            bg: assets.bg.river,
+            char: { horse: "anim-go-home" },
+            head: assets.head.horse,
+            name: "小马",
+            text: "太可怕了……任务还是放弃吧，我得赶紧回家。",
+            wait: 2000,
+            next: 200 // End B
+        },
+        { // 5B2. 选择问妈妈
+            id: 11,
+            bg: assets.bg.farm,
+            char: { horse: "anim-idle", mom: "anim-idle" },
+            head: assets.head.horse,
+            name: "小马",
+            text: "妈妈，牛伯伯说水浅，小松鼠又说水深，我到底该听谁的呀？",
+            next: 12
+        },
+        {
+            id: 12,
+            bg: assets.bg.farm,
+            char: { horse: "anim-idle", mom: "anim-idle" },
+            head: assets.head.mom,
+            name: "马妈妈",
+            icon: "💡",
+            text: "孩子，牛伯伯高大，小松鼠矮小。河水对他们来说当然不一样。真正的答案，需要你自己去寻找呀。",
+            next: 13 // 指向亲自尝试
+        },
+        { // 5B3 & 5B2 共同导向的实践
+            id: 13,
+            bg: assets.bg.river,
+            char: { horse: "anim-cross-river-good" },
+            head: assets.head.horse,
+            name: "小马",
+            text: "原来是这样！水既不像牛伯伯说的那么浅，也不像小松鼠说的那么深。我明白了，凡事要亲身实践！",
+            wait: 5000,
+            next: 300 // End C
+        },
+
+        /* --- 结局 --- */
+        {
+            id: 100, // End A
+            bg: assets.bg.endA,
+            char: { horse: "wet", mill: "show" },
+            head: assets.head.teacher,
+            name: "霓老师总结",
+            text: "鲁莽的尝试虽然也可能成功，但却让你陷入了不必要的危险。记住，独立思考和判断是宝贵的财富。按“↻”重来试试别的选择吧！",
+            final: true
+        },
+        {
+            id: 200, // End B
+            bg: assets.bg.endB,
+            char: { horse: "sad" },
+            head: assets.head.teacher,
+            name: "霓老师总结",
+            text: "胆怯的退缩让你错失了完成任务和认识世界的机会。被他人的恐惧支配，是无法前行的。按“↻”重来，勇敢一点吧！",
+            final: true
+        },
+        {
+            id: 300, // End C
+            bg: assets.bg.endC,
+            char: { horse: "happy", mill: "show" },
+            head: assets.head.teacher,
+            name: "霓老师总结",
+            text: "太棒了！你通过独立思考和勇敢实践，完美地解决了问题！这正是故事的真谛：实践出真知！按“↻”可再次体验这个故事。",
+            final: true
+        }
+    ];
+
+    const els = {
+        scene: document.getElementById('scene-layer'),
+        teacher: document.getElementById('teacher-sprite'),
+        horse: document.getElementById('horse-sprite'),
+        mom: document.getElementById('mom-sprite'),
+        cow: document.getElementById('cow-sprite'),
+        squirrel: document.getElementById('squirrel-sprite'),
+        mill: document.getElementById('mill-sprite'),
+        iconContainer: document.getElementById('icon-container'),
+        portraitFrame: document.getElementById('portrait-frame'),
+        portrait: document.getElementById('portrait-img'),
+        name: document.getElementById('name-tag'),
+        text: document.getElementById('text-content'),
+        choices: document.getElementById('choices-box'),
+        next: document.getElementById('next-btn'),
+        box: document.getElementById('dialogue-area')
+    };
+
+    const allCharSprites = [els.teacher, els.horse, els.mom, els.cow, els.squirrel, els.mill];
+
+    let typeInterval;
+    window.restartGame = function() { render(1); }
+
+    function render(id) {
+        const node = script.find(s => s.id === id);
+        if(!node) return;
+
+        // 清理状态
+        clearInterval(typeInterval);
+        els.iconContainer.innerHTML = '';
+        allCharSprites.forEach(sprite => {
+            sprite.style.display = 'none';
+            sprite.className = 'character'; // Reset class
+        });
+        if(els.horse) els.horse.id = 'horse-sprite';
+        if(els.mill) els.mill.id = 'mill-sprite';
+
+        // 1. 设置背景
+        if(node.bg) els.scene.style.backgroundImage = `url('${node.bg}')`;
+        
+        // 2. 设置角色
+        if (node.char) {
+            Object.entries(node.char).forEach(([charName, animClass]) => {
+                const charEl = els[charName];
+                if (charEl) {
+                    charEl.style.display = 'block';
+                    
+                    // 特殊结局状态处理 (已适配新的小马SVG)
+                    if (charName === 'horse') {
+                        if (animClass === 'wet') {
+                            charEl.src = assets.sprite.horseWet;
+                            charEl.className = 'character anim-idle';
+                        } else if (animClass === 'sad') {
+                            charEl.src = assets.sprite.horseSad;
+                            charEl.className = 'character anim-idle';
+                        } else if (animClass === 'happy') {
+                            charEl.src = assets.sprite.horseHappy;
+                            charEl.className = 'character anim-idle';
+                        } else {
+                           charEl.src = assets.sprite.horse;
+                           charEl.className = `character ${animClass}`;
+                        }
+                    } else if (charName === 'mill' && animClass === 'show') {
+                        charEl.src = assets.sprite.mill;
+                        charEl.style.display = 'block';
+                        charEl.id = 'mill-sprite';
+                    }
+                    else {
+                        charEl.src = assets.sprite[charName];
+                        charEl.className = `${charEl.classList[0]} ${animClass}`;
+                    }
+                }
+            });
+        }
+        
+        // 3. 设置头像和名字
+        if (node.head) {
+            els.portrait.src = node.head;
+            els.portraitFrame.style.visibility = 'visible';
+        } else {
+            els.portraitFrame.style.visibility = 'hidden';
+        }
+        els.name.innerText = node.name;
+
+        // 4. 清理旧UI
+        els.choices.innerHTML = '';
+        els.next.style.display = 'none';
+        
+        // 5. 打字机效果
+        els.text.innerText = '';
+        els.text.classList.toggle('squirrel-text', !!node.isSquirrel);
+        let i = 0;
+        
+        function typeWriter() {
+             if (i < node.text.length) {
+                els.text.innerText += node.text.charAt(i);
+                i++;
+                typeInterval = setTimeout(typeWriter, 40);
+            } else {
+                onTypingFinished();
+            }
+        }
+
+        function onTypingFinished() {
+            clearInterval(typeInterval);
+            els.text.innerText = node.text; // Ensure full text is displayed
+            
+            if (node.icon) {
+                els.iconContainer.innerHTML = `<span class="icon">${node.icon}</span>`;
+            }
+
+            const delay = node.wait || 0;
+            setTimeout(() => {
+                showControls(node);
+            }, delay);
+        }
+
+        // 跳过打字机
+        els.box.onclick = (event) => {
+            // Prevent button clicks from triggering this
+            if (event.target.tagName === 'BUTTON') return;
+
+            if (i < node.text.length) {
+                i = node.text.length; // Move index to end
+                onTypingFinished();
+            } else if (node.next && !node.choices) {
+                render(node.next);
+            }
+        };
+
+        typeWriter();
+    }
+
+    function showControls(node) {
+        if (node.choices) {
+            node.choices.forEach(c => {
+                let btn = document.createElement('button');
+                btn.className = 'pixel-btn';
+                btn.innerText = c.txt;
+                btn.onclick = (e) => {
+                    e.stopPropagation();
+                    render(c.to);
+                };
+                els.choices.appendChild(btn);
+            });
+        } else if (node.next) {
+            els.next.style.display = 'block';
+        } else if (node.final) {
+             // Game over, no next or choices
+        }
+    }
+
+    window.onload = () => {
+        // Preload sprites
+        Object.values(assets.sprite).forEach(url => {
+            const img = new Image();
+            img.src = url;
+        });
+        render(1);
+    }
+
+</script>
+</body>
+</html>
